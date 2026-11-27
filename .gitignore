@@ -1,0 +1,18 @@
+# Local settings: PIN and session secret
+config.json
+
+# Runtime output
+*.log
+*.log.*
+qr.png
+__pycache__/
+*.pyc
+
+# Local backups
+*.bak_*
+
+# Test helpers / output
+tests/pylib/
+tests/flow-*/
+tests/cdp-profile-*/
+tests/shot_*.png

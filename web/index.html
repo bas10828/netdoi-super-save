@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Netdoi super Save</title>
+<link rel="icon" href="/logo.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="bar">
+    <img class="logo" src="/logo.jpg" alt="">
+    <div class="brand">Netdoi super Save</div>
+    <button id="refreshBtn" class="icon-btn" type="button" aria-label="โหลดใหม่" data-icon="refresh"></button>
+    <button id="screenBtn" class="pill-btn" type="button"><span data-icon="monitor"></span>ภาพจอคอม</button>
+  </div>
+  <label class="search">
+    <span data-icon="search"></span>
+    <input id="q" type="search" placeholder="ค้นหาไฟล์ทุกโฟลเดอร์" autocomplete="off" enterkeyhint="search">
+  </label>
+  <div class="crumb-row">
+    <nav id="crumbs" class="crumbs" aria-label="ตำแหน่งโฟลเดอร์"></nav>
+    <button id="zipFolderBtn" class="chip-btn" type="button"><span data-icon="zip"></span>โหลดทั้งโฟลเดอร์</button>
+  </div>
+  <div class="tools">
+    <div id="chips" class="chips" role="tablist">
+      <button type="button" data-kind="all" class="on">ทั้งหมด</button>
+      <button type="button" data-kind="image">รูป</button>
+      <button type="button" data-kind="video">วิดีโอ</button>
+      <button type="button" data-kind="pdf">PDF</button>
+      <button type="button" data-kind="doc">เอกสาร</button>
+      <button type="button" data-kind="audio">เสียง</button>
+      <button type="button" data-kind="archive">บีบอัด</button>
+      <button type="button" data-kind="other">อื่นๆ</button>
+    </div>
+    <div class="tools-right">
+      <select id="sort" aria-label="เรียง">
+        <option value="date-desc">ใหม่สุด</option>
+        <option value="date-asc">เก่าสุด</option>
+        <option value="name-asc">ชื่อ ก→ฮ</option>
+        <option value="name-desc">ชื่อ ฮ→ก</option>
+        <option value="size-desc">ใหญ่สุด</option>
+        <option value="size-asc">เล็กสุด</option>
+      </select>
+      <button id="viewBtn" class="icon-btn" type="button" aria-label="สลับมุมมอง" data-icon="grid"></button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div id="status" class="status"></div>
+  <ul id="list" class="list"></ul>
+  <div id="empty" class="empty" hidden>
+    <div class="empty-icon" data-icon="folderOpen"></div>
+    <div id="emptyText"></div>
+  </div>
+</main>
+
+<div id="selbar" class="selbar" hidden>
+  <button id="selClose" class="icon-btn" type="button" aria-label="ยกเลิกการเลือก" data-icon="close"></button>
+  <div class="selinfo"><b id="selCount"></b><small id="selSize"></small></div>
+  <button id="selAll" class="btn ghost" type="button">ทั้งหมด</button>
+  <button id="selDownload" class="btn primary" type="button"><span data-icon="download"></span>โหลด</button>
+</div>
+
+<label id="fab" class="fab">
+  <span data-icon="upload"></span><span>ส่งไฟล์เข้าคอม</span>
+  <input id="pick" type="file" multiple hidden>
+</label>
+
+<section id="uploads" class="sheet" hidden>
+  <div class="sheet-head">
+    <div><b id="upTitle">กำลังส่งไฟล์</b><small id="upSub"></small></div>
+    <button id="upCancel" class="btn ghost" type="button">ยกเลิก</button>
+    <button id="upHide" class="icon-btn" type="button" aria-label="ซ่อน" data-icon="close" hidden></button>
+  </div>
+  <progress id="upTotal" max="100" value="0"></progress>
+  <ul id="upList" class="up-list"></ul>
+</section>
+
+<section id="viewer" class="viewer" hidden>
+  <div class="vbar">
+    <button id="vClose" class="icon-btn" type="button" aria-label="ปิด" data-icon="back"></button>
+    <div class="vtitle"><div id="vName"></div><small id="vMeta"></small></div>
+    <a id="vDownload" class="icon-btn" aria-label="โหลดไฟล์นี้" data-icon="download"></a>
+  </div>
+  <div id="vBody" class="vbody"></div>
+  <button id="vPrev" class="vnav prev" type="button" aria-label="ก่อนหน้า" data-icon="left"></button>
+  <button id="vNext" class="vnav next" type="button" aria-label="ถัดไป" data-icon="right"></button>
+</section>
+
+<section id="screen" class="viewer" hidden>
+  <div class="vbar">
+    <button id="sClose" class="icon-btn" type="button" aria-label="ปิด" data-icon="back"></button>
+    <div class="vtitle"><div>ภาพจอคอม</div><small id="sMeta">กดปุ่มด้านล่างเพื่อบันทึกจอ</small></div>
+    <a id="sSave" class="icon-btn" aria-label="เก็บรูปลงโทรศัพท์" data-icon="download" hidden></a>
+  </div>
+  <div class="vbody screen-body"><img id="sShot" alt="ภาพจอคอม" hidden></div>
+  <div class="screen-actions">
+    <button id="sGrab" class="btn primary block" type="button"><span data-icon="monitor"></span>บันทึกภาพจอคอม</button>
+    <a id="sSaveBig" class="btn save block" hidden><span data-icon="download"></span>เก็บรูปลงโทรศัพท์</a>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
