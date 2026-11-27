@@ -17,6 +17,9 @@ const ICON_PATHS = {
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
   folderOpen: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.5a2 2 0 0 0-1.9 1.4L3 19z"/><path d="M3 19h15.5a2 2 0 0 0 1.9-1.4L22 12H7.5"/>',
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  trash: '<path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m3 0-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  folderPlus: '<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M12 10v6M9 13h6"/>',
   download: '<path d="M12 3v12m-5-5 5 5 5-5"/><path d="M5 21h14"/>',
   upload: '<path d="M12 21V9m-5 5 5-5 5 5"/><path d="M5 3h14"/>',
   back: '<path d="M19 12H5m7-7-7 7 7 7"/>',
@@ -247,6 +250,7 @@ function render() {
   list.replaceChildren(...items.map(rowFor));
   $('viewBtn').innerHTML = icon(state.view === 'grid' ? 'list' : 'grid');
   $('zipFolderBtn').hidden = !!state.search || !state.items.length;
+  $('newFolderBtn').hidden = !!state.search;
   $('crumbs').scrollLeft = $('crumbs').scrollWidth;  // keep the current folder name visible
 
   const folders = items.filter(i => i.kind === 'folder').length;
@@ -421,6 +425,7 @@ function updateSelection() {
   $('selSize').textContent = sizeText(size) + (folders ? ' + ' + folders + ' โฟลเดอร์' : '');
   const single = items.length === 1 && items[0].kind !== 'folder';
   $('selDownload').lastChild.textContent = single ? 'โหลด' : 'โหลด zip';
+  $('selRename').hidden = items.length !== 1;
   const allShown = state.shown.length && state.shown.every(i => state.selected.has(relOf(i)));
   $('selAll').textContent = allShown ? 'ไม่เลือก' : 'ทั้งหมด';
 }
@@ -473,6 +478,146 @@ $('zipFolderBtn').addEventListener('click', () => {
   } else {
     requestZip('', state.items.map(i => i.name));
   }
+});
+
+// ---------------------------------------------- delete / rename / new folder
+// One small modal for "are you sure?" and "type a name". Resolves to true / the
+// typed name, or null when cancelled (Android back closes a modal <dialog> too).
+function ask({ title, text = '', value = null, okText = 'ตกลง', danger = false, check }) {
+  const dialog = $('ask');
+  const input = $('askInput');
+  $('askTitle').textContent = title;
+  $('askText').textContent = text;
+  $('askText').hidden = !text;
+  $('askMsg').textContent = '';
+  $('askOk').textContent = okText;
+  $('askOk').className = 'btn ' + (danger ? 'danger' : 'primary');
+  $('askOk').disabled = false;
+  input.hidden = value === null;
+  input.value = value || '';
+  return new Promise(resolve => {
+    const done = result => {
+      dialog.removeEventListener('close', onCancel);
+      $('askOk').removeEventListener('click', onOk);
+      $('askCancel').removeEventListener('click', onCancel);
+      if (dialog.open) dialog.close();
+      resolve(result);
+    };
+    const onOk = async e => {
+      e.preventDefault();
+      if (value === null) { done(true); return; }
+      const name = input.value.trim();
+      if (!name) { $('askMsg').textContent = 'ใส่ชื่อก่อน'; return; }
+      if (/[\\/:*?"<>|]/.test(name)) { $('askMsg').textContent = 'ชื่อห้ามมี \\ / : * ? " < > |'; return; }
+      if (check) {
+        $('askOk').disabled = true;
+        try {
+          await check(name);
+        } catch (err) {
+          $('askMsg').textContent = errorText(err);
+          return;
+        } finally {
+          $('askOk').disabled = false;
+        }
+      }
+      done(name);
+    };
+    const onCancel = () => done(null);
+    dialog.addEventListener('close', onCancel);
+    $('askOk').addEventListener('click', onOk);
+    $('askCancel').addEventListener('click', onCancel);
+    dialog.showModal();
+    if (value !== null) {
+      input.focus();
+      const dot = input.value.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : input.value.length);  // select the name, keep the extension
+    }
+  });
+}
+
+const postJson = (url, data) => api(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(data),
+});
+
+function reloadAfterChange() {
+  if (state.search) runSearch(); else load(true);
+}
+
+$('selDelete').addEventListener('click', async () => {
+  const items = [...state.selected.values()];
+  if (!items.length) return;
+  const folders = items.filter(i => i.kind === 'folder').length;
+  const files = items.length - folders;
+  const what = [files && files + ' ไฟล์', folders && folders + ' โฟลเดอร์'].filter(Boolean).join(' และ ');
+  const names = items.slice(0, 5).map(i => '• ' + i.name).join('\n') +
+    (items.length > 5 ? '\n…และอีก ' + (items.length - 5) + ' รายการ' : '');
+  const ok = await ask({
+    title: 'ลบ ' + what + '?',
+    text: names + '\n\nย้ายไปถังขยะ (Recycle Bin) ในคอม กู้คืนได้ที่คอม' +
+      (folders ? '\nโฟลเดอร์จะถูกลบพร้อมของข้างในทั้งหมด' : ''),
+    okText: 'ลบ',
+    danger: true,
+  });
+  if (!ok) return;
+  toast('กำลังลบ…', 15000);
+  try {
+    // Group by folder: search results can come from many folders.
+    const groups = new Map();
+    items.forEach(i => { if (!groups.has(i.dir)) groups.set(i.dir, []); groups.get(i.dir).push(i.name); });
+    let deleted = 0;
+    const failed = [];
+    for (const [dir, names] of groups) {
+      try {
+        const res = await postJson('/api/delete', { dir, names });
+        deleted += res.deleted.length;
+        failed.push(...res.failed);
+      } catch (e) {
+        if (e.status !== 409) throw e;
+        failed.push(...names);
+      }
+    }
+    toast(failed.length
+      ? 'ลบได้ ' + deleted + ' ลบไม่ได้ ' + failed.length + ' (ไฟล์อาจเปิดค้างอยู่ในคอม): ' + failed.slice(0, 3).join(', ')
+      : 'ลบแล้ว ' + deleted + ' รายการ (อยู่ในถังขยะของคอม)', failed.length ? 7000 : 3500);
+  } catch (e) {
+    toast(errorText(e), 5000);
+  }
+  closeLayer();
+  reloadAfterChange();
+});
+
+$('selRename').addEventListener('click', async () => {
+  const items = [...state.selected.values()];
+  if (items.length !== 1) return;
+  const item = items[0];
+  const name = await ask({
+    title: item.kind === 'folder' ? 'เปลี่ยนชื่อโฟลเดอร์' : 'เปลี่ยนชื่อไฟล์',
+    value: item.name,
+    okText: 'เปลี่ยนชื่อ',
+    check: async newName => {
+      if (newName !== item.name) await postJson('/api/rename', { dir: item.dir, name: item.name, new: newName });
+    },
+  });
+  if (name === null) return;
+  if (name !== item.name) toast('เปลี่ยนชื่อเป็น ' + name + ' แล้ว');
+  closeLayer();
+  reloadAfterChange();
+});
+
+$('newFolderBtn').addEventListener('click', async () => {
+  const dir = state.path;
+  const name = await ask({
+    title: 'สร้างโฟลเดอร์ใหม่',
+    text: 'ใน ' + (dir ? dir.split('/').pop() : 'Netdoi Share'),
+    value: 'โฟลเดอร์ใหม่',
+    okText: 'สร้าง',
+    check: newName => postJson('/api/mkdir', { dir, name: newName }),
+  });
+  if (name === null) return;
+  toast('สร้างโฟลเดอร์ ' + name + ' แล้ว');
+  if (state.path === dir) load(true);
 });
 
 // ------------------------------------------------------------------ viewer

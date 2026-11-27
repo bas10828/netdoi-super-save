@@ -173,6 +173,7 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: in
 .btn.ghost { background: var(--surface-2); color: var(--text); }
 .btn.block { display: flex; width: 100%; padding: 15px; font-size: 17px; }
 .btn:disabled { opacity: .5; }
+.btn.danger { background: var(--danger); color: #fff; }
 
 /* ---------- floating upload button + selection bar */
 .fab {
@@ -186,7 +187,10 @@ body.selecting .fab { display: none; }
   max-width: 720px; margin: 0 auto; display: flex; align-items: center; gap: 8px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 8px; box-shadow: var(--shadow);
 }
+.selbar { flex-wrap: wrap; }
 .selinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.selactions { flex: 1 1 100%; display: flex; gap: 8px; }
+.selactions .btn { flex: 1; padding: 10px 8px; white-space: nowrap; }
 .selinfo b { white-space: nowrap; }
 .selinfo small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -287,3 +291,19 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 16p
 .login-card input { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 14px; font-size: 22px; text-align: center; letter-spacing: 6px; outline: 0; }
 .login-card input:focus { border-color: var(--accent); }
 .login-msg { min-height: 1.5em; color: var(--danger); margin: 8px 0; }
+
+/* ---------- confirm / name dialog */
+.ask {
+  width: min(92vw, 420px); border: 0; border-radius: 18px; padding: 20px;
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow);
+}
+.ask::backdrop { background: rgba(15, 23, 42, .5); }
+.ask h3 { margin: 0 0 8px; font-size: 18px; }
+.ask p { margin: 0 0 12px; color: var(--muted); white-space: pre-line; word-break: break-word; max-height: 40vh; overflow: auto; }
+.ask input {
+  width: 100%; font: inherit; font-size: 17px; padding: 12px; border-radius: 12px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+}
+.ask-msg { min-height: 1.4em; color: var(--danger); font-size: 14px; margin: 6px 0; }
+.ask-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+.ask-buttons .btn { flex: 1; padding: 13px; }

@@ -24,6 +24,7 @@
   </label>
   <div class="crumb-row">
     <nav id="crumbs" class="crumbs" aria-label="ตำแหน่งโฟลเดอร์"></nav>
+    <button id="newFolderBtn" class="chip-btn" type="button"><span data-icon="folderPlus"></span>โฟลเดอร์ใหม่</button>
     <button id="zipFolderBtn" class="chip-btn" type="button"><span data-icon="zip"></span>โหลดทั้งโฟลเดอร์</button>
   </div>
   <div class="tools">
@@ -64,7 +65,11 @@
   <button id="selClose" class="icon-btn" type="button" aria-label="ยกเลิกการเลือก" data-icon="close"></button>
   <div class="selinfo"><b id="selCount"></b><small id="selSize"></small></div>
   <button id="selAll" class="btn ghost" type="button">ทั้งหมด</button>
-  <button id="selDownload" class="btn primary" type="button"><span data-icon="download"></span>โหลด</button>
+  <div class="selactions">
+    <button id="selRename" class="btn ghost" type="button"><span data-icon="edit"></span>เปลี่ยนชื่อ</button>
+    <button id="selDelete" class="btn danger" type="button"><span data-icon="trash"></span>ลบ</button>
+    <button id="selDownload" class="btn primary" type="button"><span data-icon="download"></span>โหลด</button>
+  </div>
 </div>
 
 <label id="fab" class="fab">
@@ -120,6 +125,19 @@
     <ul id="tList" class="clip-list"></ul>
   </div>
 </section>
+
+<dialog id="ask" class="ask">
+  <form method="dialog">
+    <h3 id="askTitle"></h3>
+    <p id="askText"></p>
+    <input id="askInput" type="text" autocomplete="off" enterkeyhint="done">
+    <div id="askMsg" class="ask-msg"></div>
+    <div class="ask-buttons">
+      <button id="askCancel" class="btn ghost" type="button">ยกเลิก</button>
+      <button id="askOk" class="btn primary" value="ok">ตกลง</button>
+    </div>
+  </form>
+</dialog>
 
 <div id="toast" class="toast" hidden></div>
 <script src="/app.js"></script>

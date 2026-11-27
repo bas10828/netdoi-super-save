@@ -339,6 +339,9 @@ def clear_clips():
 
 
 def notify(message, title="Netdoi super Save"):
+    """Windows toast from the tray. Off unless config.json has "notify": true (user found them noisy)."""
+    if not (Handler.config and Handler.config.get("notify") is True):
+        return
     try:
         if tray is not None:
             tray.notify(message[:200], title)
@@ -493,6 +496,49 @@ def walk(root):
                     stack.append((entry.path, rel + (entry.name,)))
             except OSError:
                 pass
+
+
+class SHFILEOPSTRUCTW(ctypes.Structure):
+    _fields_ = [
+        ("hwnd", wintypes.HWND),
+        ("wFunc", wintypes.UINT),
+        ("pFrom", ctypes.c_void_p),
+        ("pTo", ctypes.c_void_p),
+        ("fFlags", ctypes.c_ushort),
+        ("fAnyOperationsAborted", wintypes.BOOL),
+        ("hNameMappings", ctypes.c_void_p),
+        ("lpszProgressTitle", wintypes.LPCWSTR),
+    ]
+
+
+FO_DELETE = 3
+FOF_SILENT = 0x0004
+FOF_NOCONFIRMATION = 0x0010
+FOF_ALLOWUNDO = 0x0040
+FOF_NOERRORUI = 0x0400
+FOF_WANTNUKEWARNING = 0x4000  # ask on the PC instead of silently destroying a file too big for the bin
+
+
+def send_to_recycle_bin(path):
+    """Move one file or folder to the Windows Recycle Bin. Raises OSError on failure."""
+    buffer = ctypes.create_unicode_buffer(str(path) + "\0")  # list must end with two NULs
+    op = SHFILEOPSTRUCTW()
+    op.wFunc = FO_DELETE
+    op.pFrom = ctypes.cast(buffer, ctypes.c_void_p)
+    op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI | FOF_WANTNUKEWARNING
+    result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(op))
+    if result or op.fAnyOperationsAborted or os.path.lexists(path):
+        raise OSError(f"SHFileOperation failed ({result:#x})")
+
+
+def new_name_or_none(raw):
+    """A name typed on the phone for rename / new folder, or None when not usable."""
+    if not isinstance(raw, str) or any(c in raw for c in "/\\"):
+        return None
+    name = safe_name(raw)
+    if name is None or name in (".", "..") or is_hidden_name(name):
+        return None
+    return name
 
 
 def move_without_overwrite(source, folder, name):
@@ -783,6 +829,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.handle_capture()
             elif path == "/api/zip":
                 self.handle_zip_request()
+            elif path == "/api/delete":
+                self.handle_delete()
+            elif path == "/api/rename":
+                self.handle_rename()
+            elif path == "/api/mkdir":
+                self.handle_mkdir()
             elif path == "/api/clips":
                 self.handle_clip_send()
             elif path == "/api/clips/pull":
@@ -1046,6 +1098,111 @@ class Handler(BaseHTTPRequestHandler):
                 del zip_jobs[old]
             zip_jobs[token] = (now + ZIP_TOKEN_SECONDS, items, filename)
         self.reply_json({"url": f"/zip/{token}", "filename": filename})
+
+    # ---- delete / rename / new folder
+
+    def read_json(self):
+        """Parsed JSON object from the request body, or None after replying 400."""
+        try:
+            data = json.loads(self.read_body(MAX_JSON_BODY) or b"")
+            if isinstance(data, dict):
+                return data
+        except ValueError:
+            pass
+        self.reply_json({"error": "คำขอไม่ถูกต้อง"}, 400)
+        return None
+
+    def resolve_item(self, base_rel, name):
+        """An existing file/folder below share_dir (never share_dir itself), or None."""
+        if not isinstance(base_rel, str) or not isinstance(name, str) or not split_rel(name):
+            return None
+        path = resolve_rel(self.share_dir, join_rel(base_rel, name))
+        if path is None or path == self.share_dir:
+            return None
+        return path
+
+    def handle_delete(self):
+        request = self.read_json()
+        if request is None:
+            return
+        base_rel = request.get("dir", "")
+        names = request.get("names")
+        if not isinstance(names, list) or not 1 <= len(names) <= 10000:
+            self.reply_json({"error": "คำขอไม่ถูกต้อง"}, 400)
+            return
+        deleted, failed = [], []
+        for name in names:
+            path = self.resolve_item(base_rel, name)
+            if path is None:
+                failed.append(str(name))
+                continue
+            try:
+                send_to_recycle_bin(path)
+                deleted.append(name)
+            except OSError:
+                log.warning("cannot recycle %s", path, exc_info=True)
+                failed.append(name)
+        log.info("recycled %d item(s) from %r by %s%s", len(deleted), base_rel, self.client_address[0],
+                 f", failed {failed!r}" if failed else "")
+        self.reply_json({"deleted": deleted, "failed": failed}, 200 if deleted or not failed else 409)
+
+    def handle_rename(self):
+        request = self.read_json()
+        if request is None:
+            return
+        base_rel = request.get("dir", "")
+        source = self.resolve_item(base_rel, request.get("name"))
+        new = new_name_or_none(request.get("new"))
+        if source is None:
+            self.reply_json({"error": "ไม่พบไฟล์นี้แล้ว"}, 404)
+            return
+        if new is None:
+            self.reply_json({"error": "ชื่อนี้ใช้ไม่ได้"}, 400)
+            return
+        target = source.parent / new
+        same_file = new.lower() == source.name.lower()  # case-only rename on Windows
+        if new == source.name:
+            self.reply_json({"name": new})
+            return
+        if not same_file and os.path.lexists(target):
+            self.reply_json({"error": f"มี \"{new}\" อยู่แล้ว"}, 409)
+            return
+        try:
+            os.rename(source, target)
+        except FileExistsError:
+            self.reply_json({"error": f"มี \"{new}\" อยู่แล้ว"}, 409)
+            return
+        except OSError:
+            log.warning("cannot rename %s", source, exc_info=True)
+            self.reply_json({"error": "เปลี่ยนชื่อไม่ได้ (ไฟล์อาจเปิดค้างอยู่ในคอม)"}, 409)
+            return
+        log.info("renamed %r -> %r by %s", str(source.relative_to(self.share_dir)), new, self.client_address[0])
+        self.reply_json({"name": new})
+
+    def handle_mkdir(self):
+        request = self.read_json()
+        if request is None:
+            return
+        base_rel = request.get("dir", "")
+        folder = resolve_rel(self.share_dir, base_rel if isinstance(base_rel, str) else "\0", "dir")
+        name = new_name_or_none(request.get("name"))
+        if folder is None:
+            self.reply_json({"error": "ไม่พบโฟลเดอร์ปลายทาง"}, 404)
+            return
+        if name is None:
+            self.reply_json({"error": "ชื่อนี้ใช้ไม่ได้"}, 400)
+            return
+        try:
+            (folder / name).mkdir()
+        except FileExistsError:
+            self.reply_json({"error": f"มี \"{name}\" อยู่แล้ว"}, 409)
+            return
+        except OSError:
+            log.warning("cannot create folder %r in %s", name, folder, exc_info=True)
+            self.reply_json({"error": "สร้างโฟลเดอร์ไม่ได้"}, 500)
+            return
+        log.info("created folder %r by %s", join_rel(base_rel, name), self.client_address[0])
+        self.reply_json({"name": name})
 
     def handle_zip_download(self, token):
         with zip_lock:

@@ -136,6 +136,60 @@ try:
     check("zip via selection", {"หนึ่ง.txt", "ย่อย/อัปโหลด ภาษาไทย.txt", "ย่อย/photo.bin"} <= names, str(names))
     check("selection closed after download", js("document.body.classList.contains('selecting')") is False)
 
+    # ---- new folder, rename, delete through the dialog
+    def shot(name):
+        (HERE / name).write_bytes(base64.b64decode(cdp("Page.captureScreenshot", format="png")["data"]))
+
+    js("document.getElementById('newFolderBtn').click()")
+    time.sleep(0.3)
+    check("new folder dialog open", js("document.getElementById('ask').open") is True)
+    js("document.getElementById('askInput').value = 'สร้างใหม่'")
+    shot("shot_newfolder.png")
+    js("document.getElementById('askOk').click()")
+    time.sleep(1.2)
+    check("folder created from page", (demo / "สร้างใหม่").is_dir())
+    check("dialog closed + list shows folder", js("document.getElementById('ask').open") is False
+          and js("[...document.querySelectorAll('.row')].some(r => r.textContent.includes('สร้างใหม่'))"))
+
+    js("[...document.querySelectorAll('.row')].find(r => r.textContent.includes('สอง')).querySelector('.thumb').click()")
+    time.sleep(0.3)
+    check("rename button shown for one item", js("!document.getElementById('selRename').hidden") is True)
+    shot("shot_selbar.png")
+    js("document.getElementById('selRename').click()")
+    time.sleep(0.3)
+    check("rename dialog prefilled", js("document.getElementById('askInput').value") == "สอง.txt")
+    js("document.getElementById('askInput').value = 'สร้างใหม่'; document.getElementById('askOk').click()")
+    time.sleep(0.8)
+    check("rename onto existing name shows error, dialog stays",
+          js("document.getElementById('ask').open") is True and "อยู่แล้ว" in (js("document.getElementById('askMsg').textContent") or ""),
+          js("document.getElementById('askMsg').textContent"))
+    js("document.getElementById('askInput').value = 'สองใหม่.txt'; document.getElementById('askOk').click()")
+    time.sleep(1.2)
+    check("renamed from page", (demo / "สองใหม่.txt").exists() and not (demo / "สอง.txt").exists())
+    check("selection closed after rename", js("document.body.classList.contains('selecting')") is False)
+
+    js("""{ const rows = [...document.querySelectorAll('.row')];
+          rows.find(r => r.textContent.includes('หนึ่ง')).querySelector('.thumb').click();
+          rows.find(r => r.textContent.includes('สร้างใหม่')).querySelector('.thumb').click(); }""")
+    time.sleep(0.3)
+    check("two items selected", js("document.getElementById('selCount').textContent") == "เลือก 2")
+    check("rename hidden for two items", js("document.getElementById('selRename').hidden") is True)
+    js("document.getElementById('selDelete').click()")
+    time.sleep(0.3)
+    shot("shot_delete.png")
+    check("delete asks first", js("document.getElementById('ask').open") is True and (demo / "หนึ่ง.txt").exists())
+    js("document.getElementById('askCancel').click()")
+    time.sleep(0.3)
+    check("cancel keeps files + selection", (demo / "หนึ่ง.txt").exists()
+          and js("document.getElementById('selCount').textContent") == "เลือก 2")
+    js("document.getElementById('selDelete').click()")
+    time.sleep(0.3)
+    js("document.getElementById('askOk').click()")
+    time.sleep(2)
+    check("deleted from page", not (demo / "หนึ่ง.txt").exists() and not (demo / "สร้างใหม่").exists())
+    check("list refreshed after delete",
+          not js("[...document.querySelectorAll('.row')].some(r => r.textContent.includes('หนึ่ง'))"))
+
     # ---- screen capture to the phone
     js("document.getElementById('screenBtn').click()")
     time.sleep(0.3)
@@ -166,7 +220,7 @@ try:
         js("document.getElementById('tInput').value = 'S/N ZAT309N118941 https://example.com'; document.getElementById('tSend').click()")
         time.sleep(1.2)
         check("text sent from page", app.get_clipboard_text() == "S/N ZAT309N118941 https://example.com")
-        check("text listed with link button", js("document.querySelectorAll('#tList .clip').length") == 1
+        check("text listed with link button", "ZAT309N118941" in (js("document.querySelector('#tList .clip').textContent") or "")
               and js("!!document.querySelector('#tList a.btn')"))
         data = cdp("Page.captureScreenshot", format="png")["data"]
         (HERE / "shot_text.png").write_bytes(base64.b64decode(data))
