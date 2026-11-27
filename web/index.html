@@ -15,7 +15,8 @@
     <img class="logo" src="/logo.jpg" alt="">
     <div class="brand">Netdoi super Save</div>
     <button id="refreshBtn" class="icon-btn" type="button" aria-label="โหลดใหม่" data-icon="refresh"></button>
-    <button id="screenBtn" class="pill-btn" type="button"><span data-icon="monitor"></span>ภาพจอคอม</button>
+    <button id="textBtn" class="pill-btn" type="button"><span data-icon="message"></span>ข้อความ</button>
+    <button id="screenBtn" class="pill-btn" type="button"><span data-icon="monitor"></span>จอคอม</button>
   </div>
   <label class="search">
     <span data-icon="search"></span>
@@ -102,6 +103,21 @@
   <div class="screen-actions">
     <button id="sGrab" class="btn primary block" type="button"><span data-icon="monitor"></span>บันทึกภาพจอคอม</button>
     <a id="sSaveBig" class="btn save block" hidden><span data-icon="download"></span>เก็บรูปลงโทรศัพท์</a>
+  </div>
+</section>
+
+<section id="texts" class="panel" hidden>
+  <div class="pbar">
+    <button id="tClose" class="icon-btn" type="button" aria-label="ปิด" data-icon="back"></button>
+    <div class="vtitle"><div>ข้อความ</div><small>ส่ง S/N, MAC, ลิงก์, รหัส ระหว่างโทรศัพท์กับคอม</small></div>
+    <button id="tClear" class="btn ghost" type="button">ล้าง</button>
+  </div>
+  <div class="pbody">
+    <textarea id="tInput" rows="4" placeholder="พิมพ์หรือวางข้อความที่นี่"></textarea>
+    <button id="tSend" class="btn primary block" type="button"><span data-icon="upload"></span>ส่งไปคอม (copy ให้เลย)</button>
+    <button id="tPull" class="btn ghost block" type="button"><span data-icon="download"></span>ดึงข้อความที่ copy ไว้ในคอม</button>
+    <div id="tMsg" class="status"></div>
+    <ul id="tList" class="clip-list"></ul>
   </div>
 </section>
 

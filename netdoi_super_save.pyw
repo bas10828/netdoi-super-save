@@ -28,6 +28,7 @@ import threading
 import time
 import zipfile
 from collections import OrderedDict
+from ctypes import wintypes
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
@@ -65,6 +66,9 @@ SEARCH_LIMIT = 300
 SEARCH_SECONDS = 4
 ZIP_TOKEN_SECONDS = 900
 MAX_JSON_BODY = 1024 * 1024
+CLIPS_PATH = APP_DIR / "clips.json"
+MAX_CLIPS = 50
+MAX_CLIP_CHARS = 100_000
 
 KIND_EXTENSIONS = {
     "image": "jpg jpeg png gif webp bmp avif heic heif tif tiff svg ico",
@@ -109,6 +113,9 @@ thumb_lock = threading.Lock()
 thumb_cache = OrderedDict()  # (path, mtime_ns, size) -> jpeg bytes, b"" when it failed
 zip_lock = threading.Lock()
 zip_jobs = {}  # token -> (expires, [(arcname, path)], filename)
+clipboard_lock = threading.Lock()
+clips_lock = threading.Lock()
+tray = None  # pystray.Icon once the tray is running
 
 
 def setup_logging():
@@ -116,6 +123,16 @@ def setup_logging():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     log.addHandler(handler)
     log.setLevel(logging.INFO)
+
+
+def write_text_atomic(path, text):
+    """Write a whole file so a power cut leaves either the old or the new content."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(text)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 def load_config():
@@ -134,7 +151,7 @@ def load_config():
             config[key] = make()
             changed = True
     if changed:
-        CONFIG_PATH.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+        write_text_atomic(CONFIG_PATH, json.dumps(config, indent=2, ensure_ascii=False))
     return config
 
 
@@ -168,6 +185,21 @@ def refresh_config():
             log.info("PIN changed")
         Handler.config = config
         Handler.share_dir = share_dir.resolve()
+    update_tray()
+
+
+def is_paused():
+    return bool(Handler.config and Handler.config.get("paused"))
+
+
+def set_paused(paused):
+    """Turn sharing off/on. Stored in config.json so it survives a restart."""
+    with config_lock:
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+        config["paused"] = bool(paused)
+        write_text_atomic(CONFIG_PATH, json.dumps(config, indent=2, ensure_ascii=False))
+    refresh_config()
+    log.info("sharing %s", "paused" if paused else "resumed")
 
 
 def lan_ip():
@@ -204,6 +236,114 @@ def capture_png():
         buffer = io.BytesIO()
         image.save(buffer, "PNG", compress_level=3)
     return buffer.getvalue()
+
+
+# ------------------------------------------------------------------ clipboard
+
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE = 0x0002
+_user32 = ctypes.WinDLL("user32", use_last_error=True)
+_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_user32.OpenClipboard.argtypes = [wintypes.HWND]
+_user32.OpenClipboard.restype = wintypes.BOOL
+_user32.CloseClipboard.restype = wintypes.BOOL
+_user32.EmptyClipboard.restype = wintypes.BOOL
+_user32.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+_user32.IsClipboardFormatAvailable.restype = wintypes.BOOL
+_user32.GetClipboardData.argtypes = [wintypes.UINT]
+_user32.GetClipboardData.restype = wintypes.HANDLE
+_user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+_user32.SetClipboardData.restype = wintypes.HANDLE
+_kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+_kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+_kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+_kernel32.GlobalLock.restype = ctypes.c_void_p
+_kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+_kernel32.GlobalUnlock.restype = wintypes.BOOL
+_kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+_kernel32.GlobalFree.restype = wintypes.HGLOBAL
+
+
+class _Clipboard:
+    """Open the Windows clipboard, retrying while another program holds it."""
+
+    def __enter__(self):
+        clipboard_lock.acquire()
+        for _ in range(40):
+            if _user32.OpenClipboard(None):
+                return self
+            time.sleep(0.05)
+        clipboard_lock.release()
+        raise OSError("clipboard is busy")
+
+    def __exit__(self, *exc):
+        _user32.CloseClipboard()
+        clipboard_lock.release()
+
+
+def get_clipboard_text():
+    with _Clipboard():
+        if not _user32.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            return None
+        handle = _user32.GetClipboardData(CF_UNICODETEXT)
+        if not handle:
+            return None
+        pointer = _kernel32.GlobalLock(handle)
+        if not pointer:
+            return None
+        try:
+            return ctypes.wstring_at(pointer)
+        finally:
+            _kernel32.GlobalUnlock(handle)
+
+
+def set_clipboard_text(text):
+    data = text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-16-le") + b"\0\0"
+    with _Clipboard():
+        _user32.EmptyClipboard()
+        handle = _kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            raise OSError("GlobalAlloc failed")
+        pointer = _kernel32.GlobalLock(handle)
+        ctypes.memmove(pointer, data, len(data))
+        _kernel32.GlobalUnlock(handle)
+        if not _user32.SetClipboardData(CF_UNICODETEXT, handle):
+            _kernel32.GlobalFree(handle)  # still ours only when SetClipboardData failed
+            raise OSError("SetClipboardData failed")
+
+
+def load_clips():
+    try:
+        clips = json.loads(CLIPS_PATH.read_text(encoding="utf-8"))
+        return clips if isinstance(clips, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def add_clip(text, source):
+    """Store a text message (newest first). source is 'phone' or 'pc'."""
+    text = text.replace("\r\n", "\n")[:MAX_CLIP_CHARS]
+    with clips_lock:
+        clips = load_clips()
+        if clips and clips[0]["text"] == text and clips[0]["from"] == source:
+            return clips[0]  # pressing the button twice adds nothing
+        clip = {"id": secrets.token_hex(6), "text": text, "from": source, "time": time.time()}
+        clips = [clip] + clips[: MAX_CLIPS - 1]
+        write_text_atomic(CLIPS_PATH, json.dumps(clips, ensure_ascii=False))
+    return clip
+
+
+def clear_clips():
+    with clips_lock:
+        write_text_atomic(CLIPS_PATH, "[]")
+
+
+def notify(message, title="Netdoi super Save"):
+    try:
+        if tray is not None:
+            tray.notify(message[:200], title)
+    except Exception:
+        log.info("tray notification failed", exc_info=True)
 
 
 # ---------------------------------------------------------------- file system
@@ -574,12 +714,26 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- routing
 
+    @staticmethod
+    def sharing_paused():
+        refresh_config()  # pick up a pause set from the tray or by editing config.json
+        return is_paused()
+
+    def paused_reply(self, path):
+        if path == "/":
+            self.reply(503, web_file("paused.html"), "text/html; charset=utf-8",
+                       {"Content-Security-Policy": PAGE_CSP})
+        else:
+            self.reply(503, "ปิดการแชร์อยู่ เปิดได้จากไอคอนที่คอม")
+
     def do_GET(self):
         path = urlsplit(self.path).path
         try:
             if path in STATIC_FILES:
                 file, content_type = STATIC_FILES[path]
                 self.reply(200, file.read_bytes(), content_type, cache="no-cache")
+            elif self.sharing_paused():
+                self.paused_reply(path)
             elif path == "/":
                 if self.is_authorized():
                     self.reply(200, web_file("index.html"), "text/html; charset=utf-8",
@@ -604,6 +758,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.handle_download(unquote(path[len("/files/"):]))
             elif path.startswith("/zip/"):
                 self.handle_zip_download(path[len("/zip/"):])
+            elif path == "/api/clips":
+                self.reply_json({"items": load_clips()})
             else:
                 self.reply(404, "not found")
         except ConnectionError:
@@ -612,7 +768,12 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path = urlsplit(self.path).path
         try:
-            if path == "/login":
+            if self.sharing_paused():
+                if path == "/upload":
+                    self.refuse_upload(503, "ปิดการแชร์อยู่ เปิดได้จากไอคอนที่คอม")
+                else:
+                    self.paused_reply(path)
+            elif path == "/login":
                 self.handle_login()
             elif path == "/upload":
                 self.handle_upload()
@@ -622,6 +783,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.handle_capture()
             elif path == "/api/zip":
                 self.handle_zip_request()
+            elif path == "/api/clips":
+                self.handle_clip_send()
+            elif path == "/api/clips/pull":
+                self.handle_clip_pull()
+            elif path == "/api/clips/clear":
+                clear_clips()
+                self.reply_json({"items": []})
             else:
                 self.reply(404, "not found")
         except ConnectionError:
@@ -667,6 +835,39 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(503, "บันทึกจอไม่ได้ (จอคอมอาจ lock หรือมีหน้าต่าง UAC เปิดอยู่)")
             return
         self.reply(200, data, "image/png")
+
+    # ---- text / clipboard
+
+    def handle_clip_send(self):
+        body = self.read_body(MAX_JSON_BODY)
+        try:
+            text = json.loads(body or b"")["text"]
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError
+        except (ValueError, KeyError, TypeError):
+            self.reply_json({"error": "ไม่มีข้อความ"}, 400)
+            return
+        clip = add_clip(text, "phone")
+        try:
+            set_clipboard_text(clip["text"])
+            copied = True
+        except OSError:
+            log.warning("cannot set clipboard", exc_info=True)
+            copied = False
+        notify(("Copy แล้ว กด Ctrl+V วางได้เลย\n" if copied else "") + clip["text"], "ข้อความจากโทรศัพท์")
+        log.info("text from %s (%d chars)", self.client_address[0], len(clip["text"]))
+        self.reply_json({"item": clip, "copied": copied})
+
+    def handle_clip_pull(self):
+        try:
+            text = get_clipboard_text()
+        except OSError:
+            self.reply_json({"error": "คลิปบอร์ดคอมไม่ว่าง ลองใหม่อีกครั้ง"}, 503)
+            return
+        if not text or not text.strip():
+            self.reply_json({"error": "คอมยังไม่ได้ copy ข้อความไว้ (copy ที่คอมก่อน แล้วกดใหม่)"}, 404)
+            return
+        self.reply_json({"item": add_clip(text, "pc")})
 
     # ---- browsing
 
@@ -983,7 +1184,37 @@ def tray_image():
     return image
 
 
+tray_images = {}
+
+
+def paused_image(image):
+    """Grey version of the tray icon with a red pause badge."""
+    grey = ImageOps.grayscale(image.convert("RGB")).convert("RGBA")
+    grey = Image.blend(Image.new("RGBA", grey.size, (255, 255, 255, 255)), grey, 0.45)
+    draw = ImageDraw.Draw(grey)
+    draw.ellipse((30, 30, 63, 63), fill=(220, 38, 38, 255), outline=(255, 255, 255, 255), width=2)
+    draw.rectangle((40, 39, 44, 54), fill=(255, 255, 255, 255))
+    draw.rectangle((49, 39, 53, 54), fill=(255, 255, 255, 255))
+    return grey
+
+
+def tray_title():
+    return "Netdoi super Save (หยุดแชร์อยู่)" if is_paused() else "Netdoi super Save (กำลังแชร์)"
+
+
+def update_tray():
+    if tray is None or not tray_images:
+        return
+    try:
+        tray.icon = tray_images["paused" if is_paused() else "on"]
+        tray.title = tray_title()
+        tray.update_menu()
+    except Exception:
+        log.info("cannot update tray", exc_info=True)
+
+
 def main():
+    global tray
     setup_logging()
     try:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)  # capture at physical resolution
@@ -1013,14 +1244,39 @@ def main():
     def open_config():
         subprocess.Popen(["notepad.exe", str(CONFIG_PATH)])
 
+    def toggle_pause():
+        try:
+            set_paused(not is_paused())
+        except (OSError, ValueError):
+            log.exception("cannot change sharing state")
+            return
+        notify("หยุดแชร์แล้ว โทรศัพท์เข้าไม่ได้จนกว่าจะเปิดอีกครั้ง" if is_paused() else "เปิดแชร์แล้ว")
+
+    def push_clipboard():
+        try:
+            text = get_clipboard_text()
+        except OSError:
+            notify("คลิปบอร์ดไม่ว่าง ลองใหม่อีกครั้ง")
+            return
+        if not text or not text.strip():
+            notify("ยังไม่ได้ copy ข้อความไว้")
+            return
+        add_clip(text, "pc")
+        notify("ส่งแล้ว เปิดหน้า \"ข้อความ\" ในโทรศัพท์\n" + text)
+
     menu = pystray.Menu(
         pystray.MenuItem("แสดง QR code ให้โทรศัพท์สแกน", lambda: open_qr()),
+        pystray.MenuItem("ส่งข้อความที่ copy ไว้ไปโทรศัพท์", lambda: push_clipboard()),
         pystray.MenuItem("เปิด folder แชร์", lambda: os.startfile(Handler.share_dir), default=True),
+        pystray.MenuItem("หยุดแชร์ชั่วคราว", lambda: toggle_pause(), checked=lambda _: is_paused()),
         pystray.MenuItem(lambda _: f"http://{lan_ip()}:{config['port']}", None, enabled=False),
         pystray.MenuItem("ดู/แก้ตั้งค่า (config.json)", lambda: open_config()),
         pystray.MenuItem("ปิดโปรแกรม", stop),
     )
-    pystray.Icon("netdoi_super_save", tray_image(), "Netdoi super Save (กำลังทำงาน)", menu).run()
+    tray_images["on"] = tray_image()
+    tray_images["paused"] = paused_image(tray_images["on"])
+    tray = pystray.Icon("netdoi_super_save", tray_images["paused" if is_paused() else "on"], tray_title(), menu)
+    tray.run()
     server.shutdown()
     server.server_close()
     return 0

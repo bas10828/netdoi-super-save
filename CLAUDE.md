@@ -21,6 +21,8 @@ User rule: notes/memory about this program live in this folder (not in the globa
 - Upload to current folder, per-file progress, cancel. Same name → `name (1).ext`.
 - Android back closes preview/selection first (history layers), then goes up a folder.
 - Screen capture: labeled pill "ภาพจอคอม" in header → modal with big "บันทึกภาพจอคอม" + green "เก็บรูปลงโทรศัพท์" (user missed the icon-only version, 2026-11-27).
+- Pause sharing (2026-11-27): tray checkbox "หยุดแชร์ชั่วคราว" → `config.json` `"paused": true` (survives restart; editable by hand). While paused every route except static files returns 503 (`web/paused.html` for `/`), incl. login and upload. Tray icon turns grey with red pause badge.
+- Text / clipboard (2026-11-27): header pill "ข้อความ" → panel. Phone → PC: POST `/api/clips` stores + sets Windows clipboard (ctypes, CRLF) + tray notification. PC → phone: button "ดึงข้อความที่ copy ไว้ในคอม" (POST `/api/clips/pull`) or tray "ส่งข้อความที่ copy ไว้ไปโทรศัพท์". History = `clips.json` (last 50, gitignored, user data). Page copies via execCommand fallback (navigator.clipboard needs https). Panel polls every 3 s.
 - WARNING: share_dir now holds the user's real files. `tests/e2e.py` deletes every file that appears in share root during its run — don't run it while the user is uploading.
 - No delete/rename/new-folder (not requested).
 
@@ -33,12 +35,23 @@ User rule: notes/memory about this program live in this folder (not in the globa
 
 ## Testing
 - `tests/e2e.py` (upload/download/dedupe/names/PIN change, 28 checks) + `tests/e2e2.py` (browse, traversal, junction, range, inline policy, thumbs, PDF, cp874, zip, 401 on all endpoints, 71 checks) — both pass 2026-11-27. They run against the live app on 127.0.0.1 and clean up after themselves.
+- `tests/e2e3.py` = clips + pause (17 checks, pass 2026-11-27). Overwrites the PC clipboard during the run and restores text only (an image on the clipboard is lost); restores config.json + clips.json. Also pops tray notifications.
 - `tests/ui_flow.py` = real browser JS path in headless Chrome: file-picker upload into subfolder, row download (Thai name), select 2 → zip; passes 2026-11-27. Uses `tests/pylib` (websocket-client, installed).
 - `Server.handle_error` logs unexpected handler exceptions to the log file (pythonw has no stderr).
 - `tests/ui_shots.py` = headless Chrome over CDP at 390 px, needs `websocket-client` (`pip install --target tests/pylib websocket-client==1.8.0`) and demo files in share `_demo_ui` (delete after). Claude-in-Chrome extension was not connected.
 - Always `compile()` before restart: pythonw hides syntax errors. Restart = kill pythonw with `netdoi_super_save` in cmdline, start the .lnk; check port 8765 + log.
 - Backups: `.bak_20261127` (screenshot-only), `.bak_20261127b` (before file manager).
 - Deps: Pillow 13, pystray, segno 1.6.6, PyMuPDF (user site-packages, imported lazily as `pymupdf`).
+
+## Status (end of session 2026-11-27)
+- GitHub has only the first commit `c7d3bf8` (file manager). Pause + text/clipboard work is NOT committed/pushed yet: user was asked "push เลยไหม?" and answered only "บันทึก". Ask before pushing; never push config.json/clips.json.
+- User is already using it for real (phone → PC photo uploads seen in share_dir).
+- Backups: `.bak_20261127c` = before pause/clipboard, `.bak_20261127d` = before atomic writes.
+- 2026-11-27 afternoon (after a power cut, no damage): config.json/clips.json now written via `write_text_atomic()` (tmp + fsync + os.replace); `*.tmp` gitignored. Pause/clipboard + this committed locally, NOT pushed.
+- Run tests with `C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe` — plain `python` on PATH is the WindowsApps stub without pystray (e2e3 imports the .pyw).
+- Share folder was empty at 16:30 (earlier phone photos gone — user moved them? not confirmed).
+- Suggested but not chosen yet: (3) resumable chunked upload for big videos, (4) delete→Recycle Bin / rename / new folder with confirm, (5) auto-clean old files, (6) package as .exe (PyInstaller). Skipped on purpose: video thumbnails (ffmpeg), HEIC, HTTPS.
+- User feedback: icon-only buttons get missed — use labeled buttons for main actions.
 
 ## Open
 - Not yet tested on the real Android phone over Wi-Fi.

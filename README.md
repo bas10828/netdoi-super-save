@@ -9,6 +9,8 @@ Exchange files between a Windows PC and a phone over the same Wi-Fi, from the ph
 - Download one file, a zip of several selected files, or a whole folder as a zip
 - Upload any file from the phone into the folder you are viewing, with progress for each file
 - Capture the PC screen and save it to the phone
+- Send text both ways (serial numbers, MAC addresses, links): text from the phone goes straight to the PC clipboard; the PC clipboard can be pulled to the phone
+- Pause sharing from the tray (e.g. on a customer's Wi-Fi); the setting survives a restart
 - PIN login, tray icon with a QR code for the phone URL
 
 ## Requirements
@@ -39,6 +41,7 @@ Run against the running app on `127.0.0.1`:
 ```
 python tests/e2e.py      # upload / download / names / PIN change
 python tests/e2e2.py     # browsing, previews, range, zip, path safety
+python tests/e2e3.py     # text/clipboard + pause (overwrites and restores the clipboard text)
 python tests/ui_flow.py  # real browser upload/download (needs: pip install --target tests/pylib websocket-client==1.8.0)
 ```
 

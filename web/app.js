@@ -6,6 +6,9 @@ const collator = new Intl.Collator('th', { numeric: true, sensitivity: 'base' })
 
 const ICON_PATHS = {
   refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
   monitor: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   chev: '<path d="m9 6 6 6-6 6"/>',
@@ -758,6 +761,139 @@ $('sGrab').addEventListener('click', async () => {
     $('sMeta').textContent = errorText(e);
   } finally {
     grab.disabled = false;
+  }
+});
+
+// ------------------------------------------------------------- text / clipboard
+let clipsTimer = 0;
+let clipsKey = '';
+
+async function copyText(text) {
+  // navigator.clipboard needs https; on plain http fall back to the old copy command.
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall back */ }
+  }
+  const area = el('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '0';
+  area.style.opacity = '0';
+  document.body.append(area);
+  area.select();
+  area.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+  area.remove();
+  return ok;
+}
+
+function renderClips(items) {
+  const key = items.map(c => c.id).join(',');
+  if (key === clipsKey) return;
+  clipsKey = key;
+  const list = $('tList');
+  list.replaceChildren(...items.map(clip => {
+    const item = el('li', 'clip');
+    const head = el('div', 'clip-head');
+    head.append(el('span', 'tag' + (clip.from === 'pc' ? ' pc' : ''), clip.from === 'pc' ? 'คอม → โทรศัพท์' : 'โทรศัพท์ → คอม'),
+      el('span', '', dateText(clip.time)));
+    const text = el('div', 'clip-text', clip.text);
+    text.addEventListener('click', () => text.classList.toggle('open'));
+    const actions = el('div', 'clip-actions');
+    const copy = el('button', 'btn primary');
+    copy.type = 'button';
+    copy.innerHTML = icon('copy');
+    copy.append('คัดลอก');
+    copy.addEventListener('click', async () => {
+      toast(await copyText(clip.text) ? 'คัดลอกแล้ว วางได้เลย' : 'คัดลอกไม่ได้ กดค้างที่ข้อความเพื่อเลือกเอง');
+    });
+    actions.append(copy);
+    const url = (clip.text.match(/https?:\/\/[^\s<>"]+/) || [])[0];
+    if (url) {
+      const open = el('a', 'btn ghost');
+      open.href = url;
+      open.target = '_blank';
+      open.rel = 'noopener noreferrer';
+      open.innerHTML = icon('link');
+      open.append('เปิดลิงก์');
+      actions.append(open);
+    }
+    item.append(head, text, actions);
+    return item;
+  }));
+  $('tMsg').textContent = items.length ? '' : 'ยังไม่มีข้อความ';
+}
+
+async function loadClips() {
+  try {
+    renderClips((await api('/api/clips')).items);
+  } catch (e) {
+    $('tMsg').textContent = errorText(e);
+  }
+}
+
+$('textBtn').addEventListener('click', () => {
+  $('texts').hidden = false;
+  document.body.style.overflow = 'hidden';
+  clipsKey = '';
+  loadClips();
+  clipsTimer = setInterval(() => { if (!document.hidden) loadClips(); }, 3000);
+  openLayer(() => {
+    clearInterval(clipsTimer);
+    $('texts').hidden = true;
+    document.body.style.overflow = '';
+  });
+});
+$('tClose').addEventListener('click', closeLayer);
+
+$('tSend').addEventListener('click', async () => {
+  const text = $('tInput').value;
+  if (!text.trim()) { toast('พิมพ์หรือวางข้อความก่อน'); $('tInput').focus(); return; }
+  $('tSend').disabled = true;
+  try {
+    const result = await api('/api/clips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    $('tInput').value = '';
+    toast(result.copied ? 'ส่งแล้ว ที่คอมกด Ctrl+V วางได้เลย' : 'ส่งแล้ว (copy ลงคอมไม่ได้ เปิดดูจากประวัติ)', 4000);
+    loadClips();
+  } catch (e) {
+    toast(errorText(e), 4000);
+  } finally {
+    $('tSend').disabled = false;
+  }
+});
+
+$('tPull').addEventListener('click', async () => {
+  $('tPull').disabled = true;
+  try {
+    const result = await api('/api/clips/pull', { method: 'POST' });
+    await loadClips();
+    toast(await copyText(result.item.text) ? 'ได้แล้ว และคัดลอกลงโทรศัพท์แล้ว' : 'ได้แล้ว กด "คัดลอก" ที่ข้อความ', 4000);
+  } catch (e) {
+    toast(errorText(e), 4000);
+  } finally {
+    $('tPull').disabled = false;
+  }
+});
+
+$('tClear').addEventListener('click', async () => {
+  if (!$('tList').children.length) return;
+  if ($('tClear').dataset.armed !== '1') {
+    $('tClear').dataset.armed = '1';
+    $('tClear').textContent = 'กดอีกครั้งเพื่อล้าง';
+    setTimeout(() => { $('tClear').dataset.armed = ''; $('tClear').textContent = 'ล้าง'; }, 3000);
+    return;
+  }
+  $('tClear').dataset.armed = '';
+  $('tClear').textContent = 'ล้าง';
+  try {
+    renderClips((await api('/api/clips/clear', { method: 'POST' })).items);
+  } catch (e) {
+    toast(errorText(e));
   }
 });
 

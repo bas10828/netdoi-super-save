@@ -151,6 +151,32 @@ try:
     wait_downloads(3)
     pngs = list(downloads.glob("screen_*.png"))
     check("screenshot saved as png", bool(pngs) and pngs[0].read_bytes()[:4] == b"\x89PNG", str([p.name for p in downloads.iterdir()]))
+
+    # ---- text panel (restores PC clipboard text and clips.json afterwards)
+    from importlib.machinery import SourceFileLoader
+    app = SourceFileLoader("nss_app", str(HERE.parent / "netdoi_super_save.pyw")).load_module()
+    clips_file = HERE.parent / "clips.json"
+    clips_backup = clips_file.read_bytes() if clips_file.exists() else None
+    clipboard_backup = app.get_clipboard_text()
+    try:
+        js("history.back()")
+        time.sleep(0.4)
+        js("document.getElementById('textBtn').click()")
+        time.sleep(0.5)
+        js("document.getElementById('tInput').value = 'S/N ZAT309N118941 https://example.com'; document.getElementById('tSend').click()")
+        time.sleep(1.2)
+        check("text sent from page", app.get_clipboard_text() == "S/N ZAT309N118941 https://example.com")
+        check("text listed with link button", js("document.querySelectorAll('#tList .clip').length") == 1
+              and js("!!document.querySelector('#tList a.btn')"))
+        data = cdp("Page.captureScreenshot", format="png")["data"]
+        (HERE / "shot_text.png").write_bytes(base64.b64decode(data))
+    finally:
+        if clips_backup is None:
+            clips_file.unlink(missing_ok=True)
+        else:
+            clips_file.write_bytes(clips_backup)
+        if clipboard_backup is not None:
+            app.set_clipboard_text(clipboard_backup)
     check("no JS errors", not errors, str(errors))
     ws.close()
     bws.close()

@@ -5,6 +5,7 @@ config.json
 *.log
 *.log.*
 qr.png
+clips.json
 __pycache__/
 *.pyc
 
@@ -16,3 +17,6 @@ tests/pylib/
 tests/flow-*/
 tests/cdp-profile-*/
 tests/shot_*.png
+
+# Temp files from atomic writes (config.json.tmp holds the PIN)
+*.tmp
