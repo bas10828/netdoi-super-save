@@ -45,16 +45,19 @@ User rule: notes/memory about this program live in this folder (not in the globa
 - Backups: `.bak_20261127` (screenshot-only), `.bak_20261127b` (before file manager).
 - Deps: Pillow 13, pystray, segno 1.6.6, PyMuPDF (user site-packages, imported lazily as `pymupdf`).
 
-## Status (end of session 2026-11-27)
+## Status (end of 2nd session 2026-11-27)
 - 2026-11-27: pushed to GitHub up to the text-panel delete commit (user said "บันทึก push เลย"). Ask before each future push; never push config.json/clips.json.
 - User is already using it for real (phone → PC photo uploads seen in share_dir).
 - Backups: `.bak_20261127c` = before pause/clipboard, `.bak_20261127d` = before atomic writes.
 - 2026-11-27 afternoon (after a power cut, no damage): config.json/clips.json now written via `write_text_atomic()` (tmp + fsync + os.replace); `*.tmp` gitignored. Pause/clipboard + this committed locally as `e5b1873`, later pushed. Then delete/rename/mkdir + notifications-off + per-message delete, pushed too. Backup `.bak_20261127e` = before delete/rename.
 - Run tests with `C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe` — plain `python` on PATH is the WindowsApps stub without pystray (e2e3 imports the .pyw).
 - Share folder was empty at 16:30 (earlier phone photos gone — user moved them? not confirmed).
-- Suggested but not chosen yet: (3) resumable chunked upload for big videos, (5) auto-clean old files, (6) package as .exe (PyInstaller). Skipped on purpose: video thumbnails (ffmpeg), HEIC, HTTPS.
-- User feedback: icon-only buttons get missed — use labeled buttons for main actions.
+- Suggested but not chosen yet: resumable chunked upload for big videos, auto-clean old files, package as .exe (PyInstaller), stronger PIN (shown in tray). Offered: notify only for incoming phone text (not chosen). Skipped on purpose: video thumbnails (ffmpeg), HEIC, HTTPS.
+- User feedback: icon-only buttons get missed — use labeled buttons for main actions. Tray toasts are annoying — keep them off. Wants to delete things (text messages one by one) — a list that only grows is a problem.
+- User confirmed the clipboard behaviour they need: phone text is set once; next Ctrl+C on PC replaces it (the app never re-sets/locks the clipboard). Keep it that way.
+- Tests can leave the test string `S/N ZAT309N118941…` on the PC clipboard; a later phone "pull" then stores it in clips.json (found + removed once, 2026-11-27).
 
 ## Open
-- Not yet tested on the real Android phone over Wi-Fi.
+- Not yet tested on the real Android phone over Wi-Fi (a phone at 192.168.114.113 did send text at 11:31, so LAN access works).
+- Crumb row is crowded at 390 px since "โฟลเดอร์ใหม่" was added (current folder name gets cut) — offered to rearrange.
 - Video thumbnails: none (no ffmpeg). HEIC: no preview.
