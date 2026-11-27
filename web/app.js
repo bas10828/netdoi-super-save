@@ -964,6 +964,20 @@ function renderClips(items) {
       open.append('เปิดลิงก์');
       actions.append(open);
     }
+    const remove = el('button', 'btn ghost clip-del');
+    remove.type = 'button';
+    remove.innerHTML = icon('trash');
+    remove.append('ลบ');
+    remove.addEventListener('click', async () => {
+      item.classList.add('removing');
+      try {
+        renderClips((await postJson('/api/clips/delete', { id: clip.id })).items);
+      } catch (e) {
+        item.classList.remove('removing');
+        toast(errorText(e));
+      }
+    });
+    actions.append(remove);
     item.append(head, text, actions);
     return item;
   }));
@@ -1029,12 +1043,12 @@ $('tClear').addEventListener('click', async () => {
   if (!$('tList').children.length) return;
   if ($('tClear').dataset.armed !== '1') {
     $('tClear').dataset.armed = '1';
-    $('tClear').textContent = 'กดอีกครั้งเพื่อล้าง';
-    setTimeout(() => { $('tClear').dataset.armed = ''; $('tClear').textContent = 'ล้าง'; }, 3000);
+    $('tClear').textContent = 'กดอีกครั้งเพื่อลบทั้งหมด';
+    setTimeout(() => { $('tClear').dataset.armed = ''; $('tClear').textContent = 'ลบทั้งหมด'; }, 3000);
     return;
   }
   $('tClear').dataset.armed = '';
-  $('tClear').textContent = 'ล้าง';
+  $('tClear').textContent = 'ลบทั้งหมด';
   try {
     renderClips((await api('/api/clips/clear', { method: 'POST' })).items);
   } catch (e) {

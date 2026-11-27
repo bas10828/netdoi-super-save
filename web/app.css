@@ -276,6 +276,8 @@ progress { width: 100%; height: 8px; margin: 10px 0 4px; accent-color: var(--acc
 .clip-text.open { display: block; }
 .clip-actions { display: flex; gap: 8px; margin-top: 10px; }
 .clip-actions .btn { padding: 8px 14px; font-size: 14px; }
+.clip-actions .clip-del { margin-left: auto; color: var(--danger); }
+.clip.removing { opacity: .4; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60;

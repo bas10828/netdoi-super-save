@@ -224,6 +224,11 @@ try:
               and js("!!document.querySelector('#tList a.btn')"))
         data = cdp("Page.captureScreenshot", format="png")["data"]
         (HERE / "shot_text.png").write_bytes(base64.b64decode(data))
+        before = js("document.querySelectorAll('#tList .clip').length")
+        js("document.querySelector('#tList .clip .clip-del').click()")
+        time.sleep(1)
+        check("delete one message", js("document.querySelectorAll('#tList .clip').length") == before - 1
+              and len(json.loads(clips_file.read_text(encoding="utf-8"))) == before - 1)
     finally:
         if clips_backup is None:
             clips_file.unlink(missing_ok=True)

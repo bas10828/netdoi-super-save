@@ -338,6 +338,14 @@ def clear_clips():
         write_text_atomic(CLIPS_PATH, "[]")
 
 
+def delete_clip(clip_id):
+    """Remove one message; returns the remaining list."""
+    with clips_lock:
+        clips = [c for c in load_clips() if c.get("id") != clip_id]
+        write_text_atomic(CLIPS_PATH, json.dumps(clips, ensure_ascii=False))
+    return clips
+
+
 def notify(message, title="Netdoi super Save"):
     """Windows toast from the tray. Off unless config.json has "notify": true (user found them noisy)."""
     if not (Handler.config and Handler.config.get("notify") is True):
@@ -842,6 +850,10 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/clips/clear":
                 clear_clips()
                 self.reply_json({"items": []})
+            elif path == "/api/clips/delete":
+                request = self.read_json()
+                if request is not None:
+                    self.reply_json({"items": delete_clip(str(request.get("id", "")))})
             else:
                 self.reply(404, "not found")
         except ConnectionError:
