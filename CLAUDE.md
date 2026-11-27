@@ -46,10 +46,10 @@ User rule: notes/memory about this program live in this folder (not in the globa
 - Deps: Pillow 13, pystray, segno 1.6.6, PyMuPDF (user site-packages, imported lazily as `pymupdf`).
 
 ## Status (end of session 2026-11-27)
-- GitHub has only the first commit `c7d3bf8` (file manager). Pause + text/clipboard work is NOT committed/pushed yet: user was asked "push เลยไหม?" and answered only "บันทึก". Ask before pushing; never push config.json/clips.json.
+- 2026-11-27: pushed to GitHub up to the text-panel delete commit (user said "บันทึก push เลย"). Ask before each future push; never push config.json/clips.json.
 - User is already using it for real (phone → PC photo uploads seen in share_dir).
 - Backups: `.bak_20261127c` = before pause/clipboard, `.bak_20261127d` = before atomic writes.
-- 2026-11-27 afternoon (after a power cut, no damage): config.json/clips.json now written via `write_text_atomic()` (tmp + fsync + os.replace); `*.tmp` gitignored. Pause/clipboard + this committed locally as `e5b1873`, NOT pushed. Then delete/rename/mkdir + notifications-off committed locally too, NOT pushed. Backup `.bak_20261127e` = before delete/rename.
+- 2026-11-27 afternoon (after a power cut, no damage): config.json/clips.json now written via `write_text_atomic()` (tmp + fsync + os.replace); `*.tmp` gitignored. Pause/clipboard + this committed locally as `e5b1873`, later pushed. Then delete/rename/mkdir + notifications-off + per-message delete, pushed too. Backup `.bak_20261127e` = before delete/rename.
 - Run tests with `C:\Users\Dell\AppData\Local\Programs\Python\Python312\python.exe` — plain `python` on PATH is the WindowsApps stub without pystray (e2e3 imports the .pyw).
 - Share folder was empty at 16:30 (earlier phone photos gone — user moved them? not confirmed).
 - Suggested but not chosen yet: (3) resumable chunked upload for big videos, (5) auto-clean old files, (6) package as .exe (PyInstaller). Skipped on purpose: video thumbnails (ffmpeg), HEIC, HTTPS.
