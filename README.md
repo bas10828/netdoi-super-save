@@ -13,10 +13,21 @@ Exchange files between a Windows PC and a phone over the same Wi-Fi, from the ph
 - Pause sharing from the tray (e.g. on a customer's Wi-Fi); the setting survives a restart
 - PIN login, tray icon with a QR code for the phone URL
 
-## Requirements
+## Setup
 
-- Windows, Python 3.12
-- `pip install -r requirements.txt`
+Double-click `setup.bat`. It:
+
+1. finds Python 3.12, or installs it (winget, else the python.org installer, per user, quiet)
+2. installs the packages from `requirements.txt`
+3. adds a Windows Firewall rule for private networks (asks for admin; skip with `setup.ps1 -NoFirewall`)
+4. adds a shortcut to the Startup folder so it starts with Windows
+5. starts the app (restarts it if it is already running)
+
+Safe to run again. Manual way: Windows, Python 3.12, `pip install -r requirements.txt`.
+
+## Uninstall
+
+Double-click `uninstall.bat`. It stops the app, removes the Startup shortcut and the firewall rule, then asks (default no) whether to remove the Python packages and the local settings/text history/log. It never deletes the shared folder, Python, or the program folder.
 
 ## Run
 

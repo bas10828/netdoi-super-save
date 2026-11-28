@@ -57,6 +57,11 @@ User rule: notes/memory about this program live in this folder (not in the globa
 - User confirmed the clipboard behaviour they need: phone text is set once; next Ctrl+C on PC replaces it (the app never re-sets/locks the clipboard). Keep it that way.
 - Tests can leave the test string `S/N ZAT309N118941…` on the PC clipboard; a later phone "pull" then stores it in clips.json (found + removed once, 2026-11-27).
 
+## Setup (2026-11-28)
+- `setup.bat` → `setup.ps1` (ASCII only: PowerShell 5.1 reads BOM-less files as ANSI). Python 3.12 (py -3.12 / known paths, else winget, else python.org 3.12.10 quiet per-user) → pip -r requirements.txt → firewall rule "Netdoi super Save" for pythonw, Private+Domain, via UAC (`-NoFirewall` skips) → warns if network is Public → Startup .lnk → kill + start app, waits for port.
+- `uninstall.bat` → `uninstall.ps1`: stop app → remove Startup .lnk → remove firewall rule (UAC; `-NoFirewall`) → ask y/N: pip uninstall Pillow/pystray/segno/PyMuPDF, delete config/clips/qr/log/tmp (`-NoPrompt` = no to both). Never deletes share_dir, Python, app folder.
+- Tested on this PC with `-NoFirewall` (setup pass; uninstall -NoPrompt then setup again pass). Firewall/UAC step and fresh-PC Python install not tested yet.
+
 ## Open
 - Not yet tested on the real Android phone over Wi-Fi (a phone at 192.168.114.113 did send text at 11:31, so LAN access works).
 - Crumb row is crowded at 390 px since "โฟลเดอร์ใหม่" was added (current folder name gets cut) — offered to rearrange.
